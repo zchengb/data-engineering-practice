@@ -1,0 +1,32 @@
+version: '3'
+services:
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+    networks:
+      - airflow_airflow_default
+    volumes:
+      - ./datalake:/opt/spark/datalake
+    ports:
+      - "7077:7077"
+      - "8888:8080"
+
+  spark-worker-1:
+    image: bitnami/spark:latest
+    container_name: spark-worker-1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    volumes:
+      - ./datalake:/opt/airflow/datalake
+    networks:
+      - airflow_airflow_default
+
+
+networks:
+  airflow_airflow_default:
+    external: true

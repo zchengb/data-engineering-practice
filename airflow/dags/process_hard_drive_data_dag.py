@@ -1,7 +1,9 @@
 from airflow import DAG
 from airflow.operators.dummy_operator import DummyOperator
-from airflow.contrib.operators.spark_submit_operator import SparkSubmitOperator
+from airflow.operators.python_operator import PythonOperator
 from datetime import datetime
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when
 
 default_args = {
     'owner': 'airflow',
@@ -17,10 +19,31 @@ dag = DAG(
     schedule_interval='@once',
 )
 
-transform_data = SparkSubmitOperator(
+def hard_drive_data_transform():
+    spark = SparkSession.builder \
+        .appName("Process Hard Drive Data") \
+        .master('spark://spark-master:7077') \
+        .getOrCreate()
+
+    df = spark.read.csv('file:///opt/airflow/datalake/mini_all_data.csv', header=True)
+
+    df_transformed = df.withColumn("brand",
+        when(col("model").startswith("CT"), "Crucial")
+        .when(col("model").startswith("DELLBOSS"), "Dell BOSS")
+        .when(col("model").startswith("HGST"), "HGST")
+        .when(col("model").startswith("Seagate") | col("model").startswith("ST"), "Seagate")
+        .when(col("model").startswith("TOSHIBA"), "Toshiba")
+        .when(col("model").startswith("WDC"), "Western Digital")
+        .otherwise("Others")
+    )
+
+    df_transformed.write.csv('/opt/airflow/datalake/processed_data', header=True, mode='overwrite')
+
+    spark.stop()
+
+transform_data = PythonOperator(
     task_id='transform_data',
-    application='./hard_drive_data_transform.py', 
-    conn_id='spark_default',
+    python_callable=hard_drive_data_transform,
     dag=dag,
 )
 

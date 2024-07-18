@@ -129,3 +129,5 @@ pip-requirements*.txt
 extracted/
 datalake/
 downloads/
+
+airflow/logs
