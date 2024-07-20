@@ -4,6 +4,10 @@ from airflow.operators.python_operator import PythonOperator
 from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when
+from clickhouse_driver import Client
+import pandas as pd
+from pyspark.sql.types import StructType
+
 
 default_args = {
     'owner': 'airflow',
@@ -19,7 +23,18 @@ dag = DAG(
     schedule_interval='@once',
 )
 
-def hard_drive_data_transform():
+spark_to_clickhouse_type_mapping = {
+    'string': 'String',
+    'IntegerType': 'Int32',
+    'LongType': 'Int64',
+    'DoubleType': 'Float64',
+    'FloatType': 'Float32',
+    'BooleanType': 'UInt8',
+    'TimestampType': 'DateTime',
+    'DateType': 'Date'
+}
+
+def hard_drive_data_transform(**kwargs):
     spark = SparkSession.builder \
         .appName("Process Hard Drive Data") \
         .master('spark://spark-master:7077') \
@@ -37,14 +52,33 @@ def hard_drive_data_transform():
         .otherwise("Others")
     )
 
-    df_transformed.write.csv('/opt/airflow/datalake/processed_data', header=True, mode='overwrite')
+    pandas_df = df_transformed.toPandas()
+    pandas_df = pandas_df.fillna('')
+
+    client = Client(host='clickhouse-server', port=9000, user='default', password='', database='default')
+    client.execute('DROP TABLE IF EXISTS hard_drive_data')
+    
+    columns = ", ".join([f"{col.name} {spark_to_clickhouse_type_mapping[col.dataType.simpleString()]}" for col in df_transformed.schema])
+
+    initialize_sql = f'''
+    CREATE TABLE IF NOT EXISTS hard_drive_data (
+        {columns}
+    ) ENGINE = MergeTree()
+    ORDER BY model
+    '''
+    client.execute(initialize_sql)
+
+    data = pandas_df.to_dict('records')
+    client.execute('INSERT INTO hard_drive_data VALUES', data)
 
     spark.stop()
+
 
 transform_data = PythonOperator(
     task_id='transform_data',
     python_callable=hard_drive_data_transform,
     dag=dag,
+    provide_context=True
 )
 
 start = DummyOperator(

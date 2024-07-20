@@ -7,4 +7,4 @@ RUN apt-get clean
 RUN rm -rf /var/lib/apt/lists/*
 USER airflow
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
-RUN pip3 install --no-cache-dir pyspark
+RUN pip3 install pyspark clickhouse-driver 
