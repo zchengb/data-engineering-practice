@@ -69,7 +69,8 @@ airflow-postgres-1            "docker-entrypoint.s…"   postgres            run
 airflow-redis-1               "docker-entrypoint.s…"   redis               running (healthy)   6379/tcp
 ```
 
-启动完成后的默认UI地址为：http://localhost:8080/，账号与密码均是`airflow`，其中Airflow自制镜像是因为需要使用到`Spark`和`Clickhouse-Driver`等相关Python依赖包
+启动完成后的默认UI地址为：http://localhost:8080/
+Airflow平台默认的账号与密码均是`airflow`，其中Airflow自制镜像是因为需要使用到`Spark`和`Clickhouse-Driver`等相关Python依赖包
 
 ## 5. Spark & Clickhouse
 
