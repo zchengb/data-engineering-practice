@@ -6,7 +6,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, count, sum, year
 from clickhouse_driver import Client
 import pandas as pd
-from pyspark.sql.types import StructType
+import glob
+import os
+
 
 default_args = {
     'owner': 'airflow',
@@ -21,17 +23,6 @@ dag = DAG(
     description='Process hard drive data using Spark and categorize by brand',
     schedule_interval='@once',
 )
-
-spark_to_clickhouse_type_mapping = {
-    'string': 'String',
-    'bigint': 'Int64',
-    'int': 'Int32',
-    'double': 'Float64',
-    'float': 'Float32',
-    'boolean': 'UInt8',
-    'TimestampType': 'DateTime',
-    'DateType': 'Date'
-}
 
 def create_spark_session():
     return SparkSession.builder \
@@ -53,36 +44,65 @@ def read_and_transform_data(**kwargs):
         .otherwise("Others")
     )
 
-    kwargs['ti'].xcom_push(key='df_transformed', value=df_transformed.toJSON().collect())
+    df_transformed.write.csv('file:///opt/airflow/datalake/transformed_all_data', mode='overwrite', header=True)
     spark.stop()
 
 def get_daily_summary(**kwargs):
     spark = create_spark_session()
-    df_transformed_json = kwargs['ti'].xcom_pull(key='df_transformed', task_ids='transform_data')
-    df_transformed = spark.read.json(spark.sparkContext.parallelize(df_transformed_json))
+    df_transformed = spark.read.csv('file:///opt/airflow/datalake/transformed_all_data', header=True, inferSchema=True)
 
     daily_summary = df_transformed.groupBy("date").agg(
         count("serial_number").alias("drive_count"),
         sum(when(col("failure") == "1", 1).otherwise(0)).alias("drive_failures")
     )
 
-    kwargs['ti'].xcom_push(key='daily_summary', value=daily_summary.toJSON().collect())
+    daily_summary.write.csv('file:///opt/airflow/datalake/daily_summary', mode='overwrite', header=True)
     spark.stop()
+
+def get_yearly_summary(**kwargs):
+    spark = create_spark_session()
+    df_transformed = spark.read.csv('file:///opt/airflow/datalake/transformed_all_data', header=True, inferSchema=True)
+
+    yearly_summary = df_transformed.groupBy(year("date").alias("year")).agg(
+        count("serial_number").alias("drive_count"),
+        sum(when(col("failure") == "1", 1).otherwise(0)).alias("drive_failures")
+    )
+
+    yearly_summary.write.csv('file:///opt/airflow/datalake/yearly_summary', mode='overwrite', header=True)
+    spark.stop()
+
+def read_and_concatenate_csv(file_path):
+    print(os.path.join(file_path, '*.csv'))
+    # Get list of all CSV files in the directory
+    csv_files = glob.glob(os.path.join(file_path, '*.csv'))
+    
+    # Check if any files were found
+    if not csv_files:
+        raise ValueError("No CSV files found in the directory.")
+    
+    # Print file paths for debugging
+    print(f"Found CSV files: {csv_files}")
+    
+    # Read and concatenate CSV files
+    try:
+        pandas_df = pd.concat((pd.read_csv(f) for f in csv_files), ignore_index=True)
+    except ValueError as e:
+        print(f"Error while concatenating: {e}")
+        raise
+    
+    return pandas_df
 
 def write_to_clickhouse(**kwargs):
     table_name = kwargs['table_name']
     order_by = kwargs['order_by']
-    df_json = kwargs['ti'].xcom_pull(key=kwargs['df_key'], task_ids=kwargs['df_task_id'])
+    file_path = kwargs['file_path']
+    columns = kwargs['columns']
 
-    spark = create_spark_session()
-    df = spark.read.json(spark.sparkContext.parallelize(df_json))
-    pandas_df = df.toPandas()
+    pandas_df = read_and_concatenate_csv(file_path)
     pandas_df = pandas_df.fillna('')
 
     client = Client(host='clickhouse-server', port=9000, user='default', password='', database='default')
     client.execute(f'DROP TABLE IF EXISTS {table_name}')
-
-    columns = ", ".join([f"{col.name} {spark_to_clickhouse_type_mapping[col.dataType.simpleString()]}" for col in df.schema])
 
     initialize_sql = f'''
     CREATE TABLE IF NOT EXISTS {table_name} (
@@ -95,20 +115,11 @@ def write_to_clickhouse(**kwargs):
     data = [tuple(row) for row in pandas_df.itertuples(index=False, name=None)]
     column_names = ", ".join(pandas_df.columns)
     client.execute(f'INSERT INTO {table_name} ({column_names}) VALUES', data)
-    spark.stop()
 
-def get_yearly_summary(**kwargs):
-    spark = create_spark_session()
-    df_transformed_json = kwargs['ti'].xcom_pull(key='df_transformed', task_ids='transform_data')
-    df_transformed = spark.read.json(spark.sparkContext.parallelize(df_transformed_json))
-
-    yearly_summary = df_transformed.groupBy(year("date").alias("year")).agg(
-        count("serial_number").alias("drive_count"),
-        sum(when(col("failure") == "1", 1).otherwise(0)).alias("drive_failures")
-    )
-
-    kwargs['ti'].xcom_push(key='yearly_summary', value=yearly_summary.toJSON().collect())
-    spark.stop()
+start = DummyOperator(
+    task_id="start",
+    dag=dag
+)
 
 transform_data = PythonOperator(
     task_id='transform_data',
@@ -127,7 +138,7 @@ statistic_daily_data = PythonOperator(
 write_daily_data_to_clickhouse = PythonOperator(
     task_id='write_daily_data_to_clickhouse',
     python_callable=write_to_clickhouse,
-    op_kwargs={'table_name': 'daily_summary', 'order_by': 'date', 'df_key': 'daily_summary', 'df_task_id': 'statistic_daily_data'},
+    op_kwargs={'table_name': 'daily_summary', 'order_by': 'date', 'file_path': '/opt/airflow/datalake/daily_summary', 'columns': 'date String, drive_count Int64, drive_failures Int64'},
     dag=dag,
     provide_context=True
 )
@@ -142,14 +153,9 @@ statistic_yearly_data = PythonOperator(
 write_yearly_data_to_clickhouse = PythonOperator(
     task_id='write_yearly_data_to_clickhouse',
     python_callable=write_to_clickhouse,
-    op_kwargs={'table_name': 'yearly_summary', 'order_by': 'year', 'df_key': 'yearly_summary', 'df_task_id': 'statistic_yearly_data'},
+    op_kwargs={'table_name': 'yearly_summary', 'order_by': 'year', 'file_path': '/opt/airflow/datalake/yearly_summary', 'columns': 'year Int32, drive_count Int64, drive_failures Int64'},
     dag=dag,
     provide_context=True
-)
-
-start = DummyOperator(
-    task_id="start",
-    dag=dag
 )
 
 end = DummyOperator(

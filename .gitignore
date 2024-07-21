@@ -131,3 +131,5 @@ datalake/
 downloads/
 
 airflow/logs
+
+.idea

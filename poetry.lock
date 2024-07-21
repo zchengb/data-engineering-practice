@@ -1165,6 +1165,20 @@ cachelib = ">=0.9.0,<0.10.0"
 Flask = "*"
 
 [[package]]
+name = "flask-cors"
+version = "4.0.1"
+description = "A Flask extension adding a decorator for CORS support"
+optional = false
+python-versions = "*"
+files = [
+    {file = "Flask_Cors-4.0.1-py2.py3-none-any.whl", hash = "sha256:f2a704e4458665580c074b714c4627dd5a306b333deb9074d0b1794dfa2fb677"},
+    {file = "flask_cors-4.0.1.tar.gz", hash = "sha256:eeb69b342142fdbf4766ad99357a7f3876a2ceb77689dc10ff912aac06c389e4"},
+]
+
+[package.dependencies]
+Flask = ">=0.9"
+
+[[package]]
 name = "flask-jwt-extended"
 version = "4.6.0"
 description = "Extended JWT integration with Flask"
@@ -3819,4 +3833,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "8c9f8f6f1b14eebed170e32d2267d2bf7a2c4355822961ce72081cdf45e87d73"
+content-hash = "b791b786b71c32a6f77d77ebb92e76ce4d73dbba726b4391c44388167ccb9407"
