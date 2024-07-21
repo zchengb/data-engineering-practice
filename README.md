@@ -4,7 +4,8 @@
 
 ![image-20240721162332019](https://zchengb-images.oss-cn-shenzhen.aliyuncs.com/image-20240721162332019.png)
 
-其中Backblaze数据文件来源于官网（下载地址：https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data），涵盖了近几年的数据，数据格式为CSV，整个练习的上下文如下所示：
+其中Backblaze数据文件来源于官网（下载地址：https://www.backblaze.com/cloud-storage/resources/hard-drive-test-data
+），涵盖了近几年的数据，数据格式为CSV，整个练习的上下文如下所示：
 
 ![image-20240721162629892](https://zchengb-images.oss-cn-shenzhen.aliyuncs.com/image-20240721162629892.png)
 
